@@ -28,6 +28,7 @@ private:
     FMOD::System* system;
     FMOD::Sound* sound;
     FMOD_CREATESOUNDEXINFO exinfo;
+    FMOD_MODE mode;
     unsigned int position;
     bool isLooping = false;
     unsigned int beforeLoopPosition = 0;
@@ -37,23 +38,61 @@ private:
 
 
 public:
-    // Constructor
-    AudioPlayer(){
-        system = NULL;
-        sound = NULL;
-        result = FMOD::System_Create(&system);      // Create the main system object.
-        result = system->init(512, FMOD_INIT_NORMAL, 0);    // Initialize FMOD.
-
-        memset(&exinfo, 0, sizeof(FMOD_CREATESOUNDEXINFO));
-        exinfo.cbsize = sizeof(FMOD_CREATESOUNDEXINFO);
-        exinfo.filebuffersize = 1024 * 16;        /* Increase the default file chunk size to handle seeking inside large playlist files that may be over 2kb. */
-        
-        getAudioLength(sound, audioLengthInMs);
+    // Constructors
+    AudioPlayer(const char* filePath){
+        initializeFMOD();
+        SetupSound(filePath);
         
     }
+    AudioPlayer() {
+        initializeFMOD();
+        SetupSound(filePath);
+
+    }
+
+    void loadSong(const char* filePath) {
+        reset();  // Clear old data
+        initializeFMOD();
+        SetupSound(filePath);
+    }
+    void reset() {
+        // Strings and paths
+        filePath = nullptr;
+        fileExtension.clear();
+
+        // Audio properties
+        sampleRate = 0.0f;
+        numChannels = 0;
+        audioData.clear();
+
+        audioLengthInMs = nullptr;  // If this was dynamically allocated, you'd need to delete it first
+
+        // FMOD properties
+        if (sound) {  // If the sound object exists
+            sound->release();  // Release any resources held by FMOD
+            sound = nullptr;
+        }
+
+        if (system) {
+            system->close();
+            system->release();
+            system = nullptr;
+        }
+
+        memset(&exinfo, 0, sizeof(FMOD_CREATESOUNDEXINFO));  // Reset the structure
+
+        mode = FMOD_LOOP_OFF;  // Default mode
+        position = 0;
+        isLooping = false;
+        beforeLoopPosition = 0;
+        loopStart = 0;
+        loopEnd = 0;
+        isPaused = false;
+    }
+
 
     // Getters
-    std::string getFilePath() const { return filePath; }
+    const char* getFilePath() const { return filePath; }
     int getSampleRate() const { return sampleRate; }
     int getNumChannels() const { return numChannels; }
     float* getAudioLengthInMs() const { return audioLengthInMs; }
@@ -94,7 +133,6 @@ public:
         cursorPosition.Y = 0;
         SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), cursorPosition);
     }
-
     std::vector<int> convertPositionToMinSec(int position) {
         int seconds_total = position / 1000;
         int minutes = seconds_total / 60;
@@ -137,19 +175,13 @@ public:
         channel->setPosition(position, FMOD_TIMEUNIT_MS);
     }
     void turnLoopOn(FMOD::Channel* channel) {
-        sound->setMode(FMOD_LOOP_NORMAL); // Enable looping
         isLooping = true;
         std::cout << "Looping is now enabled" << std::endl;
-        channel->stop(); // Stop the sound from playing
-        sound->release(); // Release the FMOD::Sound object
         beforeLoopPosition = position;
     }
     void turnLoopOff(FMOD::Channel* channel) {
-        sound->setMode(FMOD_LOOP_OFF); // Disable looping
         isLooping = false;
         std::cout << "Looping is now disabled" << std::endl;
-        channel->stop(); // Stop the sound from playing
-        sound->release(); // Release the FMOD::Sound object
         beforeLoopPosition = position;
     }
     void setStartLoopPosition(FMOD::Channel* channel) {
@@ -161,8 +193,29 @@ public:
         loopEnd = position;
     }
 
-    bool SetupSound(const char* filePath) {
+    void initializeFMOD() {
+        system = NULL;
+        sound = NULL;
+        result = FMOD::System_Create(&system); // Create the main system object.
+        if (result != FMOD_OK) {
+            std::cerr << "FMOD error! (" << result << ") " << FMOD_ErrorString(result) << std::endl;
+            return; // Exit if there's an error
+        }
+        result = system->init(512, FMOD_INIT_NORMAL, 0); // Initialize FMOD.
+        if (result != FMOD_OK) {
+            std::cerr << "FMOD error! (" << result << ") " << FMOD_ErrorString(result) << std::endl;
+            return; // Exit if there's an error
+        }
 
+        memset(&exinfo, 0, sizeof(FMOD_CREATESOUNDEXINFO));
+        exinfo.cbsize = sizeof(FMOD_CREATESOUNDEXINFO);
+        exinfo.filebuffersize = 1024 * 16; // Increase default file chunk size
+
+        getAudioLength(sound, audioLengthInMs);
+    }
+
+    bool SetupSound(const char* filePath) {
+        setFilePath(filePath);
         // Open the sound in a mode that's light and suited for information gathering
         result = system->createSound(filePath, FMOD_OPENONLY, nullptr, &sound);
 
@@ -177,9 +230,12 @@ public:
         unsigned int length;
         sound->getFormat(nullptr, &format, &numChannels, &bits);
         length = sound->getLength(&length, FMOD_TIMEUNIT_PCMBYTES);
+        setNumChannels(numChannels);
+
 
         // Since you might want the file extension:
-        fileExtension = std::filesystem::path(filePath).extension().string();
+        setFileExtension(filePath);
+        fileExtension = getFileExtension();
 
         // Extract sample rate
         sound->getDefaults(&sampleRate, nullptr);
@@ -195,73 +251,27 @@ public:
         exinfo.length = length;
 
         // Now create the sound ready for playback
-        result = system->createSound(filePath, FMOD_DEFAULT, &exinfo, &sound);
-
-        return (result == FMOD_OK);
-    }
-
-    // Function to set up sound from PCM data
-    bool SetupSound(const std::vector<short>& pcmData) {
-        FMOD::Sound* tempSound;
-
-        // Open the sound in a mode that's light and suited for information gathering
-        result = system->createSound(filePath, FMOD_OPENONLY, nullptr, &tempSound);
-
-        if (result != FMOD_OK) {
-            // Error handling goes here
-            return false;
+        if (fileExtension == ".mp3") {
+            mode = FMOD_MPEGSEARCH;
+        }
+        else if (fileExtension == ".wav") {
+            mode = FMOD_CREATESTREAM;
+        }
+        else {
+            mode = FMOD_NONBLOCKING;
         }
 
-        // Query the sound's properties
-        FMOD_SOUND_FORMAT format;
-        int bits;
-        unsigned int length;
-        tempSound->getFormat(nullptr, &format, &numChannels, &bits);
-        length = tempSound->getLength(&length, FMOD_TIMEUNIT_PCMBYTES);
-
-        // Since you might want the file extension:
-        fileExtension = std::filesystem::path(filePath).extension().string();
-
-        // Extract sample rate
-        tempSound->getDefaults(&sampleRate, nullptr);
-
-        // Release the temp sound now that we have its properties
-        tempSound->release();
-
-        // Prepare the FMOD_CREATESOUNDEXINFO struct for PCM data
-        exinfo.cbsize = sizeof(FMOD_CREATESOUNDEXINFO);
-        exinfo.length = pcmData.size() * sizeof(short);
-        exinfo.defaultfrequency = sampleRate; // Assuming you know the sample rate for PCM data
-        exinfo.numchannels = numChannels;     // Assuming you know the channel count for PCM data
-        exinfo.format = FMOD_SOUND_FORMAT_PCM16;
-
-        // Create sound from PCM data
-        result = system->createSound(
-            reinterpret_cast<const char*>(pcmData.data()),
-            FMOD_OPENMEMORY | FMOD_OPENRAW,
-            &exinfo,
-            &sound
-        );
-
         return (result == FMOD_OK);
     }
 
-    bool playSong(const char* filePath) {
+  
+    bool playSong() {
         bool isPlaying = false;
-        
-        setFileExtension(filePath);
         while (true) {
             FMOD::Sound* sound = NULL;
-            std::string extension = getFileExtension();
-            if (extension == ".mp3") {
-                result = system->createSound(filePath, FMOD_MPEGSEARCH | FMOD_NONBLOCKING, &exinfo, &sound);
-            }
-            else if (extension == ".wav") {
-                result = system->createSound(filePath, FMOD_CREATESTREAM | FMOD_NONBLOCKING, &exinfo, &sound);
-            }
-            else {
-                result = system->createSound(filePath, FMOD_NONBLOCKING | FMOD_NONBLOCKING, &exinfo, &sound);
-            }
+
+            result = system->createSound(getFilePath(), mode | FMOD_NONBLOCKING, &exinfo, &sound);
+            
             if (result != FMOD_OK) {
                 std::cout << "Failed to load sound: " << FMOD_ErrorString(result) << std::endl;
             }
@@ -375,11 +385,10 @@ public:
     }
 
     bool playProcessedPCMData(const std::vector<short>& pcmData) {
-        
+        bool isPlaying = true;
         FMOD::Channel* channel = nullptr;
 
         FMOD_RESULT result;
-
         // Initialize FMOD system
         result = FMOD::System_Create(&system);
         if (result != FMOD_OK) {
@@ -393,13 +402,12 @@ public:
             system->release();
             return false;
         }
-
         // Set up the extra info for FMOD
         FMOD_CREATESOUNDEXINFO exinfo = {};
         exinfo.cbsize = sizeof(FMOD_CREATESOUNDEXINFO);
         exinfo.length = pcmData.size() * sizeof(short); // size in bytes
         exinfo.defaultfrequency = 44100; // Assuming a sample rate of 44.1kHz
-        exinfo.numchannels = 2;  // Mono audio
+        exinfo.numchannels = numChannels;  // Mono audio
         exinfo.format = FMOD_SOUND_FORMAT_PCM16; // 16-bit PCM data
 
         // Create a sound from the PCM data
@@ -409,7 +417,6 @@ public:
             &exinfo,
             &sound
         );
-
 
         // Get the format details:
         FMOD_SOUND_FORMAT format;
@@ -428,37 +435,123 @@ public:
         // Length in samples:
         unsigned int length;
         sound->getLength(&length, FMOD_TIMEUNIT_PCM);
+        loopEnd = length;
         std::cout << "Length: " << length << " samples" << std::endl;
 
-        if (result != FMOD_OK) {
-            std::cerr << "Error creating sound from PCM data: " << FMOD_ErrorString(result) << std::endl;
-            system->close();
-            system->release();
-            return false;
+        while (isPlaying || isLooping) {
+            if (result != FMOD_OK) {
+                std::cerr << "Error creating sound from PCM data: " << FMOD_ErrorString(result) << std::endl;
+                system->close();
+                system->release();
+                return false;
+            }
+
+            // Play the sound
+            result = system->playSound(sound, nullptr, false, &channel);
+
+            if (result != FMOD_OK) {
+                std::cerr << "Error playing sound: " << FMOD_ErrorString(result) << std::endl;
+                sound->release();
+                system->close();
+                system->release();
+                return false;
+            }
+
+            if (isLooping) {
+                sound->setMode(FMOD_LOOP_NORMAL); // Enable looping
+            }
+            else {
+                sound->setMode(FMOD_LOOP_OFF);
+            }
+
+            do
+            {
+                //Loops the song if loop is enabled
+                channel->getPosition(&position, FMOD_TIMEUNIT_MS);
+                if (isLooping && position >= loopEnd) {
+                    // If we're beyond the loop end, reset position to loop start
+                    channel->setPosition(loopStart, FMOD_TIMEUNIT_MS);
+                }
+                ClearScreen();
+                //PROGRESS in minutes and seconds
+                channel->getPosition(&position, FMOD_TIMEUNIT_MS);
+                int minute = convertPositionToMinSec(position)[0];
+                int second = convertPositionToMinSec(position)[1];
+                int milliSecond = convertPositionToMinSec(position)[2];
+
+                std::cout << "Current position: " << minute << " min " << second << " sec " << milliSecond << " ms" << std::endl;
+                std::cout << "Controls:\nSpace/K = PLAY/PAUSE\nL = forward 500 ms\nJ = backward 500 ms\nO = forward 100 ms\nI = backward 100 ms\nToggle loop = E\nSet loopstart = Q\nSet loopend = W\n" << std::endl;
+                if (loopStart != 0) {
+                    std::cout << "Loop start: " << convertPositionToMinSec(loopStart)[0] << " min " << convertPositionToMinSec(loopStart)[1] << " sec " << convertPositionToMinSec(loopStart)[2] << " ms" << std::endl;
+                    std::cout << "Loop end: " << convertPositionToMinSec(loopEnd)[0] << " min " << convertPositionToMinSec(loopEnd)[1] << " sec " << convertPositionToMinSec(loopEnd)[2] << " ms" << std::endl;
+                }
+
+                if (_kbhit()) {
+                    char ch = _getch();
+                    float frequency;
+                    switch (ch) {
+                    case ' ':
+                    case 'k':
+                        if (isPaused) {
+                            play(channel);
+                            break;
+                        }
+                        if (!isPaused) {
+                            pause(channel);
+                            break;
+                        }
+                        break;
+
+                    case 'l':
+                        skipForward500ms(channel);
+                        break;
+
+                    case 'j':
+                        skipBackwards500ms(channel);
+                        break;
+
+                    case 'o':
+                        skipForward100ms(channel);
+                        break;
+
+                    case 'i':
+                        skipBackwards100ms(channel);
+                        break;
+
+                    case 'e':
+                        if (isLooping) {
+                            turnLoopOff(channel);
+                        }
+                        else {
+                            turnLoopOn(channel);
+                        }
+                        break;
+
+                    case 'q':
+                        setStartLoopPosition(channel);
+                        break;
+
+                    case 'w':
+                        setEndLoopPosition(channel);
+                        break;
+
+                    case 's':
+                        channel->getFrequency(&frequency); // Get the current frequency
+                        frequency *= 1.1f; // Increase the frequency to speed up the song
+                        channel->setFrequency(frequency); // Apply the new frequency
+                        std::cout << "Speed up song" << std::endl;
+                        break;
+                    }
+                }
+                system->update();
+
+                channel->isPlaying(&isPlaying);
+                if (!isPlaying)
+                    break;
+            } while (isPlaying);
         }
 
-        // Play the sound
-        result = system->playSound(sound, nullptr, false, &channel);
-
-        if (result != FMOD_OK) {
-            std::cerr << "Error playing sound: " << FMOD_ErrorString(result) << std::endl;
-            sound->release();
-            system->close();
-            system->release();
-            return false;
-        }
-
-        // Wait for sound to finish playing (simple check)
-        bool isPlaying = true;
-        while (isPlaying) {
-            channel->isPlaying(&isPlaying);
-            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // sleep for a short while to prevent high CPU usage
-        }
-
-        // Cleanup
-        sound->release();
-        system->close();
-        system->release();
+        
 
         return true;
     }
