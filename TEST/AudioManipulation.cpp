@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <iostream>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 
 class AudioManipulation {
@@ -35,7 +38,7 @@ public:
 
     // Setters
 
-    std::vector<short> getRawAudioSignal() {
+    std::vector<double> getRawAudioSignal() {
         FMOD_SOUND_TYPE type;
         unsigned int len;
         float rate;
@@ -48,7 +51,6 @@ public:
         result = FMOD::System_Create(&system);
         result = system->init(512, FMOD_INIT_NORMAL, nullptr);
 
-
         // Load audio file
         result = system->createSound(filePath, FMOD_DEFAULT, nullptr, &sound);
 
@@ -56,8 +58,6 @@ public:
         result = sound->getLength(&len, FMOD_TIMEUNIT_PCMBYTES);
 
         float audioDurationSeconds;
-        //FMOD_RESULT resultLength = getAudioLength(sound, &audioDurationSeconds);
-
 
         FMOD_SOUND_FORMAT format;
         int channels, bits;
@@ -65,11 +65,9 @@ public:
 
         // Get the sample rate
         sound->getDefaults(&rate, NULL);
-        std::cout << "Channels: " << channels << std::endl;  // 1 for mono, 2 for stereo, etc.
-        std::cout << "Bit Depth: " << bits << std::endl;     // 8, 16, 24, 32, etc.
+        std::cout << "Channels: " << channels << std::endl;
+        std::cout << "Bit Depth: " << bits << std::endl;
         std::cout << "Sample Rate: " << rate << " Hz" << std::endl;
-
-
 
         // Lock sound buffer
         void* ptr1; void* ptr2;
@@ -77,16 +75,11 @@ public:
         result = sound->lock(0, len, &ptr1, &ptr2, &len1, &len2);
 
         short* data16 = reinterpret_cast<short*>(ptr1);
-        std::vector<short> audioDataVector;
+        std::vector<double> audioDataVector;  // Change type to double
 
         for (size_t i = 0; i < len1 / sizeof(short); i++) {
-            audioDataVector.push_back(data16[i]);
+            audioDataVector.push_back(static_cast<double>(data16[i]));
         }
-        /*
-        for (unsigned int i = 0; i < len1 / 2; i++) { // divide by 2 because 2 bytes per 16-bit sample
-            std::cout << data16[i] << " ";
-        }
-        */
 
         // Unlock sound buffer
         result = sound->unlock(ptr1, ptr2, len1, len2);
@@ -99,7 +92,7 @@ public:
         return audioDataVector;
     }
 
-    void segmentVectorIntoFrames(const std::vector<short>& original, std::vector<std::vector<short>>& segments, size_t secondVecSize) {
+    void segmentVectorIntoFrames(const std::vector<double>& original, std::vector<std::vector<double>>& segments, size_t secondVecSize) {
         if (secondVecSize == 0) {
             std::cerr << "Error: secondVecSize cannot be 0." << std::endl;
             return;
@@ -130,5 +123,55 @@ public:
         }
     }
 
+    template <typename T>
+    std::vector<T> mergeFramesIntoVector(const std::vector<std::vector<T>>& segments, size_t secondVecSize) {
+        size_t originalSize = (segments.size() - 1) * (secondVecSize / 2) + secondVecSize;
+        std::vector<T> original(originalSize, 0); // Initialized with 0 for summing overlaps later
+
+        size_t pos = 0;
+
+        for (size_t i = 0; i < segments.size(); i++) {
+            for (size_t j = 0; j < segments[i].size(); j++) {
+                if (i != 0 && j < secondVecSize / 2) {
+                    // Average overlapping parts
+                    original[pos + j] = (original[pos + j] + segments[i][j]) / 2.0;
+                }
+                else {
+                    original[pos + j] = segments[i][j];
+                }
+            }
+            pos += secondVecSize / 2; // Move by half the segment size to account for overlap
+        }
+
+        return original;
+    }
+
+    // Generate a Hanning window of size N
+    std::vector<double> hanningWindow(size_t N) {
+        std::vector<double> window(N);
+
+        for (size_t n = 0; n < N; n++) {
+            window[n] = 0.5 * (1 - std::cos(2 * M_PI * n / (N - 1)));
+        }
+
+        return window;
+    }
+
+    std::vector<double> applyWindow(const std::vector<double>& frame, const std::vector<double>& window) {
+    size_t frameSize = frame.size();
+
+    // Check if window size matches frame size
+    if (frameSize != window.size()) {
+        throw std::runtime_error("Frame and window sizes must match!");
+    }
+
+    std::vector<double> windowedFrame(frameSize);
+
+    for (size_t i = 0; i < frameSize; i++) {
+        windowedFrame[i] = static_cast<short>(frame[i] * window[i]);
+    }
+
+    return windowedFrame;
+}
 
 };

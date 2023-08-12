@@ -1,0 +1,10 @@
+
+
+
+AudioPlayer
+Work to be done here. I want to be able to input a created sinewave and play that as well as a local audio file. This can be of great use when it comes to tuning.
+
+AudioManipulation
+For testing purposes I've created a sine wave that I plot and play the sound of. I do this before segmenting it and applying the Hanning function and afterwards 
+to make sure that it works as expected. The sinewave that plays after the hanning window function has lower amplitude which is to be expected.
+
