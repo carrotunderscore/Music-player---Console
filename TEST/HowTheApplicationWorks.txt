@@ -8,3 +8,5 @@ AudioManipulation
 For testing purposes I've created a sine wave that I plot and play the sound of. I do this before segmenting it and applying the Hanning function and afterwards 
 to make sure that it works as expected. The sinewave that plays after the hanning window function has lower amplitude which is to be expected.
 
+
+

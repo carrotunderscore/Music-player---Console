@@ -138,7 +138,9 @@
   <ItemGroup>
     <ClCompile Include="AudioManipulation.cpp" />
     <ClCompile Include="AudioPlayer.cpp" />
+    <ClCompile Include="Helper.cpp" />
     <ClCompile Include="TEST.cpp" />
+    <ClCompile Include="usefulRandomCode.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="fmodL.dll" />
