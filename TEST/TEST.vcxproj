@@ -162,6 +162,9 @@
     <ClInclude Include="inc\fmod\fmod_errors.h" />
     <ClInclude Include="inc\fmod\fmod_output.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="HowTheApplicationWorks.txt" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

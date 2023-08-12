@@ -16,9 +16,8 @@
 #include "AudioPlayer.cpp"
 #include "AudioManipulation.cpp"
 #include <cmath>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include <numeric>  // for std::accumulate
+
 
 
 
@@ -53,245 +52,8 @@ void changePosition(FMOD::Channel* channel, int changeInMilliseconds) {
     channel->setPosition(newPosition, FMOD_TIMEUNIT_MS);
 }
 
-template<typename T>
-int drawRawAudioSignalPlot(const std::vector<T>& pcmData) {
-    // 1. Initialize an SFML window
-    sf::RenderWindow window(sf::VideoMode(2500, 600), "Line Plot using std::vector");
-    window.setFramerateLimit(60);
-
-    // 2. Populate your vector
-    std::vector<T> data = pcmData;
-
-    // Define axes for reference
-    sf::RectangleShape xAxis(sf::Vector2f(2500, 2));
-    xAxis.setPosition(10, 300);
-    xAxis.setFillColor(sf::Color::Black);
-
-    sf::RectangleShape yAxis(sf::Vector2f(2, 580));
-    yAxis.setPosition(400, 10);
-    yAxis.setFillColor(sf::Color::Black);
-
-    // Find the range for normalization and scaling
-    T maxY = *std::max_element(data.begin(), data.end());
-    T minY = *std::min_element(data.begin(), data.end());
-
-    float scaleX = 2500.0f / (data.size() - 1);
-    float scaleY = 290.0f / std::max(std::abs(static_cast<float>(maxY)), std::abs(static_cast<float>(minY)));
-
-    float pixelsPerSecond = 2500.0f / 3.474f; // 1180 pixels for 3.474 seconds
-
-    sf::Font font;
-    if (!font.loadFromFile("Montserrat-Black.otf")) {
-        std::cerr << "Font not found!" << std::endl;
-        return -1;
-    }
-    sf::Text startLabel("0", font, 15);
-
-    float audioDuration = 3.474; // Length of your audio in seconds
-    sf::Text endLabel(std::to_string(audioDuration) + "s", font, 15);
-    endLabel.setPosition(780, 310); // Just below the end of x-axis
-    endLabel.setFillColor(sf::Color::Black);
-
-    while (window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
-                window.close();
-            }
-        }
-
-        window.clear(sf::Color::White);
-
-        // Draw the 0.1 second increment labels
-        for (float t = 0; t <= 3.474f; t += 0.1f) {
-            float xPosition = 10 + t * pixelsPerSecond;
-
-            sf::Text label;
-            label.setFont(font);
-            std::ostringstream stream;
-            stream << std::fixed << std::setprecision(1) << t;
-            label.setString(stream.str());
-            label.setCharacterSize(12); // Adjust as needed
-            label.setFillColor(sf::Color::Black);
-
-            label.setPosition(xPosition, 560);
-            window.draw(label);
-        }
-
-        // Draw axes
-        window.draw(xAxis);
-        window.draw(yAxis);
-
-        // 4. Draw the line
-        for (size_t i = 0; i < data.size() - 1; i++) {
-            sf::Vertex line[] = {
-                sf::Vertex(sf::Vector2f(10 + i * scaleX, 300 - data[i] * scaleY), sf::Color::Blue),
-                sf::Vertex(sf::Vector2f(10 + (i + 1) * scaleX, 300 - data[i + 1] * scaleY), sf::Color::Blue)
-            };
-
-            // 5. Render the line
-            window.draw(line, 2, sf::Lines);
-        }
-
-        window.display();
-    }
-}
-
-template<typename T>
-int drawRawAudioSignalPlot(const std::vector<std::vector<T>>& pcmDataMatrix) {
-    // 1. Initialize an SFML window
-    sf::RenderWindow window(sf::VideoMode(2500, 600), "Line Plot using std::vector");
-    window.setFramerateLimit(60);
-
-    // Colors for the lines
-    std::vector<sf::Color> colors = { sf::Color::Yellow, sf::Color::Blue, sf::Color::Green, sf::Color::Red };
-
-    // Define axes for reference
-    sf::RectangleShape xAxis(sf::Vector2f(2500, 2));
-    xAxis.setPosition(10, 300);
-    xAxis.setFillColor(sf::Color::Black);
-
-    sf::RectangleShape yAxis(sf::Vector2f(2, 580));
-    yAxis.setPosition(400, 10);
-    yAxis.setFillColor(sf::Color::Black);
-
-    sf::Font font;
-    if (!font.loadFromFile("Montserrat-Black.otf")) {
-        std::cerr << "Font not found!" << std::endl;
-        return -1;
-    }
-
-    sf::Text startLabel("0", font, 15);
-    float audioDuration = 3.474;
-    sf::Text endLabel(std::to_string(audioDuration) + "s", font, 15);
-    endLabel.setPosition(780, 310);
-    endLabel.setFillColor(sf::Color::Black);
-
-    while (window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
-                window.close();
-            }
-        }
-
-        window.clear(sf::Color::White);
-
-        //... Other codes for drawing x-axis, y-axis, and labels remain unchanged
-
-        // Now, loop over the 2D vector and plot each 1D vector
-        for (size_t vecIndex = 0; vecIndex < pcmDataMatrix.size(); ++vecIndex) {
-            const auto& data = pcmDataMatrix[vecIndex];
-
-            // Find the range for normalization and scaling
-            T maxY = *std::max_element(data.begin(), data.end());
-            T minY = *std::min_element(data.begin(), data.end());
-            float scaleX = 2500.0f / (data.size() - 1);
-            float scaleY = 290.0f / std::max(std::abs(static_cast<float>(maxY)), std::abs(static_cast<float>(minY)));
-
-            // Select color based on index
-            sf::Color currentColor = colors[vecIndex % colors.size()];
-
-            // Draw the line for current data
-            for (size_t i = 0; i < data.size() - 1; i++) {
-                sf::Vertex line[] = {
-                    sf::Vertex(sf::Vector2f(10 + i * scaleX, 300 - data[i] * scaleY), currentColor),
-                    sf::Vertex(sf::Vector2f(10 + (i + 1) * scaleX, 300 - data[i + 1] * scaleY), currentColor)
-                };
-
-                window.draw(line, 2, sf::Lines);
-            }
-        }
-
-        window.display();
-    }
-    return 0;
-}
-
-void plotFrame(const std::vector<short>& frame, sf::RenderWindow& window) {
-    float scaleX = window.getSize().x / static_cast<float>(frame.size());
-    float scaleY = window.getSize().y / 65536.0f;  // assuming 16-bit PCM
-
-    for (size_t i = 0; i < frame.size() - 1; i++) {
-        sf::Vertex line[] = {
-            sf::Vertex(sf::Vector2f(i * scaleX, window.getSize().y / 2 - frame[i] * scaleY), sf::Color::Blue),
-            sf::Vertex(sf::Vector2f((i + 1) * scaleX, window.getSize().y / 2 - frame[i + 1] * scaleY), sf::Color::Blue)
-        };
-        window.draw(line, 2, sf::Lines);
-    }
-}
-
-void displayFrames(const std::vector<std::vector<short>>& frames) {
-    sf::RenderWindow window(sf::VideoMode(800, 600), "Time-Domain Plot of Individual Frames");
-    size_t currentFrameIndex = 0;
-
-    while (window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
-                window.close();
-            }
-            if (event.type == sf::Event::KeyPressed) {
-                if (event.key.code == sf::Keyboard::Right && currentFrameIndex < frames.size() - 1) {
-                    currentFrameIndex++;
-                }
-                if (event.key.code == sf::Keyboard::Left && currentFrameIndex > 0) {
-                    currentFrameIndex--;
-                }
-            }
-        }
-
-        window.clear();
-        plotFrame(frames[currentFrameIndex], window);
-        window.display();
-    }
-}
-
-void drawLinesFromData(const std::vector<std::vector<short>>& data, sf::RenderWindow& window) {
-    float spacing = 20.0f;  // spacing between points
-    float verticalSpacing = 15.0f;  // spacing between each inner vector's set of lines
-    float verticalLineWidth = 2.0f;  // width of the vertical line
-
-    float x = 0.0f;
-
-    for (const auto& innerVector : data) {
-        if (!innerVector.empty()) {
-            // Draw lines based on data in the inner vector
-            for (size_t i = 0; i < innerVector.size() - 1; ++i) {
-                sf::VertexArray line(sf::Lines, 2);
-                line[0].position = sf::Vector2f(x + i * spacing, innerVector[i]);
-                line[1].position = sf::Vector2f(x + (i + 1) * spacing, innerVector[i + 1]);
-                window.draw(line);
-            }
-
-            x += innerVector.size() * spacing;
-
-            // Draw vertical line after each inner vector
-            sf::VertexArray verticalLine(sf::Lines, 2);
-            verticalLine[0].position = sf::Vector2f(x, 0);
-            verticalLine[1].position = sf::Vector2f(x, window.getSize().y);  // till the height of the window
-            verticalLine[0].color = sf::Color::Red;  // Setting color to red for clarity
-            verticalLine[1].color = sf::Color::Red;
-            window.draw(verticalLine);
-
-            x += verticalSpacing + verticalLineWidth;
-        }
-    }
-}
-
-// Generate a Hanning window of size N
-std::vector<double> hanningWindow(size_t N) {
-    std::vector<double> window(N);
-
-    for (size_t n = 0; n < N; n++) {
-        window[n] = 0.5 * (1 - std::cos(2 * M_PI * n / (N - 1)));
-    }
-
-    return window;
-}
-
 // Apply window to multiple frames of audio data
-std::vector<std::vector<double>> applyWindow(const std::vector<std::vector<short>>& frames, const std::vector<double>& window) {
+std::vector<std::vector<double>> applyWindow(const std::vector<std::vector<double>>& frames, const std::vector<double>& window) {
     size_t numFrames = frames.size();
 
     size_t frameSize = frames[0].size(); // Assuming all frames have the same size
@@ -309,60 +71,196 @@ std::vector<std::vector<double>> applyWindow(const std::vector<std::vector<short
     return windowedFrames;
 }
 
+
+std::vector<double> generateSinWave(double duration, double frequency, int sampleRate) {
+    size_t N = sampleRate * duration;  // Total number of samples
+
+    std::vector<double> data(N);
+
+    for (size_t n = 0; n < N; n++) {
+        // Scale the sine wave to fit within 16-bit range (-32768 to 32767)
+        data[n] = 32767 * std::sin(2 * M_PI * frequency * n / sampleRate);
+    }
+
+    return data;
+}
+
+std::vector<double> applyHanningWindow(const std::vector<double>& data, const std::vector<double>& window) {
+    std::vector<double> windowedData(data.size());
+    std::transform(data.begin(), data.end(), window.begin(), windowedData.begin(), std::multiplies<double>());
+    return windowedData;
+}
+
+
+std::vector<short> convertToShort(const std::vector<double>& input) {
+    std::vector<short> output;
+    output.reserve(input.size());
+
+    for (double val : input) {
+        // Clip the values to fit into short
+        val = std::max(-32768.0, std::min(32767.0, val));
+
+        // Round to nearest integer and convert to short
+        output.push_back(static_cast<short>(std::round(val)));
+    }
+
+    return output;
+}
+
+void plotSineWave(std::vector<double> data) {
+
+    sf::RenderWindow window(sf::VideoMode(2500, 600), "Sine Wave Plot");
+    window.setFramerateLimit(60);
+
+    // Scaling
+    float scaleX = static_cast<float>(window.getSize().x) / (data.size() - 1);
+    float scaleY = window.getSize().y / 100000.0f;  // Decreasing the scale for a more "zoomed out" look
+
+    while (window.isOpen()) {
+        sf::Event event;
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) {
+                window.close();
+            }
+        }
+
+        window.clear(sf::Color::White);
+
+        for (size_t i = 0; i < data.size() - 1; i++) {
+            sf::Vertex line[] = {
+                sf::Vertex(sf::Vector2f(i * scaleX, window.getSize().y / 2 - data[i] * scaleY), sf::Color::Blue),
+                sf::Vertex(sf::Vector2f((i + 1) * scaleX, window.getSize().y / 2 - data[i + 1] * scaleY), sf::Color::Blue)
+            };
+
+            window.draw(line, 2, sf::Lines);
+        }
+
+        window.display();
+    }
+}
+
+
+void playSineWaveAndProcess() {
+    /*
+    size_t frameSize = 100;
+
+    //Class initialization
+    AudioPlayer audio("C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3", 44100, 2);
+    AudioManipulation audioManipulation("C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3");
+
+    //generate sineWave -DONE
+    std::vector<double> sineWave = generateSinWave(3.0, 440, 44100);
+    //std::vector<short> sineWave = generateSinWave(1.0, 5, 100);
+    // plot the generated sine wave
+    plotSineWave(sineWave);  // Plot 1 second of a 44 Hz sine wave
+
+    //frame sineWays 
+    std::vector<std::vector<double>> sinWaveFrames((sineWave.size() / frameSize * 2), std::vector<double>(frameSize));
+    audioManipulation.segmentVectorIntoFrames(sineWave, sinWaveFrames, frameSize);
+
+    std::vector<double> window = audioManipulation.hanningWindow(frameSize);
+    //apply hanning window
+    for (auto& frame : sinWaveFrames) {
+        frame = audioManipulation.applyWindow(frame, window);
+    }
+    // reverse framing
+    std::vector<double> reversedSinWaveFrames = audioManipulation.mergeFramesIntoVector(sinWaveFrames, frameSize);
+    // plot the reversed framing
+    plotSineWave(reversedSinWaveFrames);
+
+
+
+    std::vector<short> sineWaveShort = convertToShort(sineWave);
+    std::vector<short> reversedSinWaveFramesShort = convertToShort(reversedSinWaveFrames);
+    audio.playProcessedPCMData(sineWaveShort);
+    audio.playProcessedPCMData(reversedSinWaveFramesShort);
+    */
+}
+
 int main()
 {
-    const char* homer = "C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3";
-    const char* huey = "C:\\Users\\rober\\Music\\Huey Lewis and The News - Greatest Hits Japanese Singles Collection (2023) Mp3 320kbps [PMEDIA]\\11 - Hip To Be Square.mp3";
-   
-    AudioPlayer audio(homer, 44100, 2 );
-    //audio.playSong();
-
-    AudioManipulation audioManipulation(homer);
-    std::vector<short> pcmData = audioManipulation.getRawAudioSignal();
+    size_t frameSize = 512;
+    const char* song = "C:\\Users\\rober\\Music\\Huey Lewis and The News - Greatest Hits Japanese Singles Collection (2023) Mp3 320kbps [PMEDIA]\\11 - Hip To Be Square.mp3";
+    const char* song2 = "C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3";
+    AudioPlayer audioPlayer;
+    audioPlayer.playSong(song);
+    AudioManipulation audioManipulation(song2);
 
 
-    size_t secondVectorSize = 512;
-    std::vector<std::vector<short>> pcmDataFrames((pcmData.size() / secondVectorSize * 2), std::vector<short>(secondVectorSize));
-    audioManipulation.segmentVectorIntoFrames(pcmData, pcmDataFrames, secondVectorSize);
+    std::vector<double> pcmData = audioManipulation.getRawAudioSignal();
+    std::vector<double> pcmData2 = generateSinWave(2.0, 440.0, 44100);
+
+    std::vector<short> sineWaveShort = convertToShort(pcmData);
+    std::vector<short> sineWaveShort2 = convertToShort(pcmData2);
+
+    audioPlayer.playProcessedPCMData(sineWaveShort2);
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    audioPlayer.playProcessedPCMData(sineWaveShort);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+    std::cout << "Elapsed time: " << elapsed_time.count() << " ms" << std::endl;
 
 
 
-    for (size_t i = 0; i < pcmDataFrames[100].size(); i++) {
 
-        std::cout << pcmDataFrames[100][i] << ", ";
+
+
+
+
+
+
+    /*
+    AudioManipulation audioManipulation("C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3");
+    std::vector<double> pcmData2 = audioManipulation.getRawAudioSignal();
+    std::vector<double> pcmData = generateSinWave(1.0, 44, 44100);
+
+    std::vector<short> sineWaveShort = convertToShort(pcmData);
+    audio.playProcessedPCMData(sineWaveShort);
+    
+    plotSineWave(pcmData);  
+
+    //frame sineWays 
+    std::vector<std::vector<double>> sinWaveFrames((pcmData.size() / frameSize * 2), std::vector<double>(frameSize));
+    audioManipulation.segmentVectorIntoFrames(pcmData, sinWaveFrames, frameSize);
+
+    std::vector<double> window = audioManipulation.hanningWindow(frameSize);
+    //apply hanning window
+    for (auto& frame : sinWaveFrames) {
+        frame = audioManipulation.applyWindow(frame, window);
     }
-    std::vector<double> window = hanningWindow(pcmData.size());  // Assuming all frames are of the same size
-    std::vector<std::vector<double>> windowedFrames = applyWindow(pcmDataFrames, window);
 
-    std::cout << "------------------------------------------------------------" << std::endl;
-
-    for (size_t i = 0; i < windowedFrames[100].size(); i++) {
-
-        std::cout << windowedFrames[100][i] << ", ";
-    }
-    //std::vector<double> window = hanningWindow(segments[0].size());  // Assuming all frames are of the same size
-    //std::vector<std::vector<double>> windowedFrames = applyWindow(segments, window);
+    // reverse framing
+    std::vector<double> reversedSinWaveFrames = audioManipulation.mergeFramesIntoVector(sinWaveFrames, frameSize);
+    // plot the reversed framing
+    plotSineWave(reversedSinWaveFrames);
 
 
-
-    drawRawAudioSignalPlot(pcmDataFrames[100]);
-    //drawRawAudioSignalPlot(windowedFrames[100]);
-    
-    int hej = 0;
-
-
-
-
-
-
-
-    //drawRawAudioSignalPlot(pcmData);
-
-   
-
-    
-    
+    std::vector<short> reversedSinWaveFramesShort = convertToShort(reversedSinWaveFrames);
+    audio.playProcessedPCMData(reversedSinWaveFramesShort);
+    */
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /*
 AudioPlayer = play/pause, next song, before song, speed up, slow down
