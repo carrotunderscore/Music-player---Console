@@ -72,8 +72,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\Users\rober\source\repos\TEST\TEST\inc\sfml;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\rober\source\repos\TEST\TEST\lib\sfml;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Users\rober\source\repos\TEST\TEST\inc\sfml;C:\Users\rober\source\repos\TEST\TEST\api;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\rober\source\repos\TEST\TEST\lib\sfml;C:\Users\rober\source\repos\TEST\TEST\lib\FFTW;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -116,7 +116,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>C:\Users\rober\source\repos\TEST\TEST\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>"C:\Users\rober\source\repos\TEST\TEST\lib\fmod\fmodL_vc.lib";C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-graphics-d.lib;C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-window-d.lib;C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-system-d.lib;C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-main-d.lib;"C:\Users\rober\source\repos\TEST\TEST\lib\SFML\openal32.lib";C:\Users\rober\source\repos\TEST\TEST\lib\SFML\freetype.lib</AdditionalDependencies>
+      <AdditionalDependencies>"C:\Users\rober\source\repos\TEST\TEST\lib\fmod\fmodL_vc.lib";C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-graphics-d.lib;C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-window-d.lib;C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-system-d.lib;C:\Users\rober\source\repos\TEST\TEST\lib\SFML\sfml-main-d.lib;"C:\Users\rober\source\repos\TEST\TEST\lib\SFML\openal32.lib";C:\Users\rober\source\repos\TEST\TEST\lib\SFML\freetype.lib;C:\Users\rober\source\repos\TEST\TEST\lib\FFTW\fftw3.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -138,6 +138,7 @@
   <ItemGroup>
     <ClCompile Include="AudioManipulation.cpp" />
     <ClCompile Include="AudioPlayer.cpp" />
+    <ClCompile Include="Graph.cpp" />
     <ClCompile Include="Helper.cpp" />
     <ClCompile Include="TEST.cpp" />
     <ClCompile Include="usefulRandomCode.cpp" />

@@ -124,7 +124,7 @@ public:
     }
 
     template <typename T>
-    std::vector<T> mergeFramesIntoVector(const std::vector<std::vector<T>>& segments, size_t secondVecSize) {
+    std::vector<T> reconstructSignal(const std::vector<std::vector<T>>& segments, size_t secondVecSize) {
         size_t originalSize = (segments.size() - 1) * (secondVecSize / 2) + secondVecSize;
         std::vector<T> original(originalSize, 0); // Initialized with 0 for summing overlaps later
 

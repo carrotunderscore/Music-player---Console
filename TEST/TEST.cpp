@@ -1,4 +1,4 @@
-﻿#include <SFML/Graphics.hpp>
+﻿#include "Graph.cpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -18,6 +18,8 @@
 #include <cmath>
 #include <numeric>  // for std::accumulate
 #include "Helper.cpp"
+#include <complex>
+#include <fftw3.h>
 
 
 //Function for testing purposes
@@ -56,38 +58,6 @@ std::vector<double> generateSinWave(double duration, double frequency, int sampl
     return data;
 }
 
-void plotSineWave(std::vector<double> data) {
-
-    sf::RenderWindow window(sf::VideoMode(2500, 600), "Sine Wave Plot");
-    window.setFramerateLimit(60);
-
-    // Scaling
-    float scaleX = static_cast<float>(window.getSize().x) / (data.size() - 1);
-    float scaleY = window.getSize().y / 100000.0f;  // Decreasing the scale for a more "zoomed out" look
-
-    while (window.isOpen()) {
-        sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) {
-                window.close();
-            }
-        }
-
-        window.clear(sf::Color::White);
-
-        for (size_t i = 0; i < data.size() - 1; i++) {
-            sf::Vertex line[] = {
-                sf::Vertex(sf::Vector2f(i * scaleX, window.getSize().y / 2 - data[i] * scaleY), sf::Color::Blue),
-                sf::Vertex(sf::Vector2f((i + 1) * scaleX, window.getSize().y / 2 - data[i + 1] * scaleY), sf::Color::Blue)
-            };
-
-            window.draw(line, 2, sf::Lines);
-        }
-
-        window.display();
-    }
-}
-
 void playSineWaveAndProcess() {
     /*
     size_t frameSize = 100;
@@ -102,7 +72,7 @@ void playSineWaveAndProcess() {
     // plot the generated sine wave
     plotSineWave(sineWave);  // Plot 1 second of a 44 Hz sine wave
 
-    //frame sineWays 
+    //frame sineWays
     std::vector<std::vector<double>> sinWaveFrames((sineWave.size() / frameSize * 2), std::vector<double>(frameSize));
     audioManipulation.segmentVectorIntoFrames(sineWave, sinWaveFrames, frameSize);
 
@@ -125,19 +95,15 @@ void playSineWaveAndProcess() {
     */
 }
 
-void windowing(size_t frameSize) {
+std::vector<std::vector<double>> windowing(size_t frameSize, AudioPlayer audioPlayer, AudioManipulation audioManipulation, Graph graph) {
 
-    AudioPlayer audioPlayer("C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3");
-    AudioManipulation audioManipulation("C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3");
-
-
-    std::vector<double> pcmData = audioManipulation.getRawAudioSignal();
-    std::vector<double> pcmData2 = generateSinWave(2.0, 440.0, 44100); // Need to set audioPlayer.setNumChannels(1); for playing mono audio
-
+    //std::vector<double> pcmData = audioManipulation.getRawAudioSignal();
+    std::vector<double> pcmData = generateSinWave(2.0, 44.1, 44100); // Need to set audioPlayer.setNumChannels(1); for playing mono audio
+    audioPlayer.setNumChannels(1);
     std::vector<short> sineWaveShort = Helper<double>::convertToShort(pcmData);
-    audioPlayer.playProcessedPCMData(sineWaveShort);
+    //audioPlayer.playProcessedPCMData(sineWaveShort);
 
-    plotSineWave(pcmData);
+    graph.plotSineWave(pcmData);
 
     //frame sineWays 
     std::vector<std::vector<double>> sinWaveFrames((pcmData.size() / frameSize * 2), std::vector<double>(frameSize));
@@ -148,6 +114,7 @@ void windowing(size_t frameSize) {
     for (auto& frame : sinWaveFrames) {
         frame = audioManipulation.applyWindow(frame, window);
     }
+    return sinWaveFrames;
     /*
     * // TODO: This reverse framing is gonna be implemented after the processing has been done.
     // reverse framing
@@ -159,9 +126,170 @@ void windowing(size_t frameSize) {
     */
 }
 
+//Computing FFT to a single frame
+std::vector<std::complex<double>> computeFFT(const std::vector<double>& frame) {
+    int N = frame.size();
+
+    fftw_complex* in, * out;
+    std::vector<std::complex<double>> result(N);
+
+    in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * N);
+    out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * N);
+
+    fftw_plan p = fftw_plan_dft_1d(N, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+
+    for (int i = 0; i < N; i++) {
+        in[i][0] = frame[i];
+        in[i][1] = 0.0;
+    }
+
+    fftw_execute(p);
+
+    for (int i = 0; i < N; i++) {
+        result[i] = std::complex<double>(out[i][0], out[i][1]);
+    }
+
+    fftw_destroy_plan(p);
+    fftw_free(in);
+    fftw_free(out);
+
+    return result;
+}
+
+//This calls the computeFFT on every vector in the 2D vector
+void STFT(std::vector<std::vector<double>>& frames, std::vector<std::vector<std::complex<double>>>& fft_results, std::vector<std::vector<double>>& all_magnitudes, std::vector<std::vector<double>>& all_phases) {
+
+    for (const auto& frame : frames) {
+        fft_results.push_back(computeFFT(frame));
+    }
+
+
+    for (const auto& frame_fft : fft_results) {
+        std::vector<double> magnitudes;
+        std::vector<double> phases;
+        for (const auto& complex_val : frame_fft) {
+            double magnitude = std::abs(complex_val);
+            double phase = std::arg(complex_val);
+
+            magnitudes.push_back(magnitude);
+            phases.push_back(phase);
+        }
+        all_magnitudes.push_back(magnitudes);
+        all_phases.push_back(phases);
+    }
+}
+
+std::vector<double> computeIFFT(const std::vector<std::complex<double>>& frame_fft) {
+    int N = frame_fft.size();
+
+    fftw_complex* in, * out;
+    std::vector<double> result(N);
+
+    in = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * N);
+    out = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * N);
+
+    fftw_plan p = fftw_plan_dft_1d(N, in, out, FFTW_BACKWARD, FFTW_ESTIMATE);
+
+    for (int i = 0; i < N; i++) {
+        in[i][0] = frame_fft[i].real();
+        in[i][1] = frame_fft[i].imag();
+    }
+
+    fftw_execute(p);
+
+    for (int i = 0; i < N; i++) {
+        result[i] = out[i][0] / N;
+    }
+
+    fftw_destroy_plan(p);
+    fftw_free(in);
+    fftw_free(out);
+
+    return result;
+}
+
+//This calls the computeIFFT on every vector in the 2D vector
+void inverseSTFT(std::vector<std::vector<double>>& time_frames, const std::vector<std::vector<std::complex<double>>>& stft_results) {
+    for (const auto& frame_fft : stft_results) {
+        std::vector<double> time_domain_frame = computeIFFT(frame_fft);
+        time_frames.push_back(time_domain_frame);
+    }
+
+}
+
+std::vector<std::vector<std::complex<double>>> timeStretch(const std::vector<std::vector<std::complex<double>>>& spectra, double alpha, int sampleRate) {
+    int fftSize = spectra[0].size();
+    int hopSize = fftSize / 2;  // Assuming a 50% overlap for analysis
+    int stretchHopSize = int(hopSize / alpha);
+
+    std::vector<double> previousPhase(fftSize, 0.0);
+    std::vector<double> phaseAccumulation(fftSize, 0.0);
+
+    std::vector<std::vector<std::complex<double>>> stretchedSpectraFrames;
+
+    for (size_t frame = 0; frame < spectra.size(); ++frame) {
+        std::vector<std::complex<double>> currentSpectrum = spectra[frame];
+        std::vector<std::complex<double>> outputSpectrum(fftSize, 0.0);
+
+        for (int i = 0; i < fftSize; ++i) {
+            double binFrequency = (double)i * sampleRate / fftSize;
+            double expectedPhaseDiff = 2.0 * M_PI * binFrequency * hopSize / sampleRate;
+
+            double currentPhase = std::arg(currentSpectrum[i]);
+            double phaseDiff = currentPhase - previousPhase[i] - expectedPhaseDiff;
+
+            // Phase unwrapping
+            phaseDiff -= 2.0 * M_PI * round(phaseDiff / (2.0 * M_PI));
+            double trueFrequency = binFrequency + phaseDiff * sampleRate / (2.0 * M_PI * hopSize);
+
+            phaseAccumulation[i] += stretchHopSize * trueFrequency * 2.0 * M_PI / sampleRate;
+
+            outputSpectrum[i] = std::abs(currentSpectrum[i]) * std::complex<double>(cos(phaseAccumulation[i]), sin(phaseAccumulation[i]));
+
+            previousPhase[i] = currentPhase;
+        }
+
+        stretchedSpectraFrames.push_back(outputSpectrum);
+    }
+
+    return stretchedSpectraFrames;
+}
+
 int main()
 {
-    windowing(512);
+    AudioManipulation audioManipulation("C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3");
+    AudioPlayer audioPlayer("C:\\Users\\rober\\Music\\\sound_file_formats_testing\\sample.mp3");
+    Graph graph;
+    size_t frameSize = 1024;
+
+    std::vector<std::vector<double>> frames = windowing(frameSize, audioPlayer, audioManipulation, graph);
+    std::vector<std::vector<std::complex<double>>> fft_results;
+    std::vector<std::vector<double>> all_magnitudes;
+    std::vector<std::vector<double>> all_phases;
+    std::vector<std::vector<double>> time_frames;
+
+
+    STFT(frames, fft_results, all_magnitudes, all_phases);
+   
+    //Here should the time strecthing occur
+   // Assuming you've already computed the STFT and have the resulting spectra stored in a variable called 'spectra'
+    double alpha = 1.5;  // This means the audio will be stretched by a factor of 1.5
+    int sampleRate = 44100;  // For example, assuming a common sample rate of 44.1 kHz
+
+    std::vector<std::vector<std::complex<double>>> stretchedSpectra = timeStretch(fft_results, alpha, sampleRate);
+
+    inverseSTFT(time_frames, stretchedSpectra);
+
+    //Overlap-Add:
+    std::vector<double> frames2 = audioManipulation.reconstructSignal(time_frames, frameSize);
+    graph.plotSineWave(frames2);
+    std::vector<short> shortFrames = Helper<double>::convertToShort(frames2);
+    audioPlayer.setNumChannels(1);
+    //audioPlayer.playProcessedPCMData(shortFrames);
+    
+
+    int hej = 0;
+
     
 }
 
